@@ -6,37 +6,40 @@ import colorsys
 
 FASTAPI_BASE_URL = "http://127.0.0.1:8000"
 
-st.set_page_config(page_title="Daily Calorie Tracker", layout="centered")
+st.set_page_config(page_title="Daily Calorie Tracker", layout="wide")
 st.title("Daily Calorie Tracker 🍎")
 st.markdown("Track your daily calorie intake and visualize your progress!")
 
-# --- Add Food Entry Form ---
-st.header("Add Food Entry")
-with st.form("food_entry_form"):
-    food_item = st.selectbox("Select food item", list(FOOD_CALORIES_DATABASE.keys()))
-    quantity = st.number_input("Enter quantity", min_value=0.0, value=1.0, step=0.5)
+# --- Layout: 2 columns side by side ---
+left_col, right_col = st.columns([1, 2])
 
-    selected_food = FOOD_CALORIES_DATABASE[food_item][0]
-    calories_per_unit = selected_food["calories_per_unit"]
-    calories = int(quantity * calories_per_unit)
+# === Left Column: Food Entry Form ===
+with left_col:
+    st.header("Add Food Entry")
+    with st.form("food_entry_form"):
+        food_item = st.selectbox("Select food item", list(FOOD_CALORIES_DATABASE.keys()))
+        quantity = st.number_input("Enter quantity", min_value=0.0, value=1.0, step=0.5)
 
-    st.write(f"**Estimated Calories:** {calories} kcal")
+        selected_food = FOOD_CALORIES_DATABASE[food_item][0]
+        calories_per_unit = selected_food["calories_per_unit"]
+        calories = int(quantity * calories_per_unit)
 
-    submitted = st.form_submit_button("Add Entry")
-    if submitted:
-        try:
-            response = requests.post(
-                f"{FASTAPI_BASE_URL}/add_calorie_entry/",
-                json={"item": food_item, "calories": calories}
-            )
-            response.raise_for_status()
-            st.success(f"Added {food_item} ({calories} kcal) to your daily log.")
-            st.experimental_rerun()
-        except Exception as e:
-            st.error(f"Failed to add entry: {e}")
+        st.write(f"**Estimated Calories:** {calories} kcal")
 
-# --- Daily Summary ---
-left_col, right_col = st.columns([2, 3])
+        submitted = st.form_submit_button("Add Entry")
+        if submitted:
+            try:
+                response = requests.post(
+                    f"{FASTAPI_BASE_URL}/add_calorie_entry/",
+                    json={"item": food_item, "calories": calories}
+                )
+                response.raise_for_status()
+                st.success(f"Added {food_item} ({calories} kcal) to your daily log.")
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(f"Failed to add entry: {e}")
+
+# === Right Column: Daily Summary & Pie Chart ===
 with right_col:
     st.header("Your Daily Summary")
     try:
