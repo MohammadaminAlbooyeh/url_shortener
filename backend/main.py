@@ -16,6 +16,19 @@ calorie_entries: List[Dict[str, int]] = []
 # For a real app, you'd associate entries with specific dates and users.
 current_total_calories: int = 0
 
+
+# New: Endpoint to get all entries
+class CalorieEntryOut(BaseModel):
+    item: str
+    calories: int
+
+@app.get("/get_entries/", response_model=List[CalorieEntryOut])
+async def get_entries():
+    """
+    Returns all calorie entries for the current day.
+    """
+    return calorie_entries
+
 class CalorieEntry(BaseModel):
     """
     Pydantic model for a single calorie entry.
