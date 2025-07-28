@@ -18,20 +18,27 @@ with left_col:
     st.header("Add Food Entry")
     with st.form("food_entry_form"):
         food_item = st.selectbox("Select food item", list(FOOD_CALORIES_DATABASE.keys()))
-        quantity = st.number_input("Enter quantity", min_value=0.0, value=1.0, step=0.5)
 
-        selected_food = FOOD_CALORIES_DATABASE[food_item][0]
-        calories_per_unit = selected_food["calories_per_unit"]
-        calories = int(quantity * calories_per_unit)
+        # Get the selected food's unit and calories per unit from the updated database
+        selected_food_info = FOOD_CALORIES_DATABASE[food_item][0]
+        input_unit = selected_food_info["input_unit"]
+        calories_per_input_unit = selected_food_info["calories_per_input_unit"]
+
+        # Display the unit dynamically next to the quantity input
+        quantity = st.number_input(f"Enter quantity ({input_unit})", min_value=0.0, value=1.0, step=0.5)
+
+        # Calculate estimated calories based on the new 'calories_per_input_unit'
+        calories = int(quantity * calories_per_input_unit)
 
         st.write(f"**Estimated Calories:** {calories} kcal")
 
         submitted = st.form_submit_button("Add Entry")
         if submitted:
             try:
+                # Send the unit information to the backend
                 response = requests.post(
                     f"{FASTAPI_BASE_URL}/add_calorie_entry/",
-                    json={"item": food_item, "calories": calories}
+                    json={"item": food_item, "calories": calories, "unit": input_unit}
                 )
                 response.raise_for_status()
                 st.success(f"Added {food_item} ({calories} kcal) to your daily log.")
@@ -88,11 +95,15 @@ with right_col:
             st.plotly_chart(fig, use_container_width=True)
 
             st.markdown("**What you ate today:**")
-            for label, value, color in zip(food_labels, food_values, food_colors):
+            # Display item, calories, AND unit
+            for entry in entries:
+                label = entry['item']
+                value = entry['calories']
+                unit_display = entry.get('unit', '') # Use .get() in case older entries don't have 'unit'
                 st.markdown(
-                    f'<span style="display:inline-block;width:16px;height:16px;background:{color};'
+                    f'<span style="display:inline-block;width:16px;height:16px;background:{food_colors[food_labels.index(label)]};'
                     f'border-radius:3px;margin-right:8px;"></span> {label} '
-                    f'<span style="color:gray;">({value} kcal)</span>',
+                    f'<span style="color:gray;">({value} kcal - {unit_display})</span>', # Added unit_display
                     unsafe_allow_html=True
                 )
         else:

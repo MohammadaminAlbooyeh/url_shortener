@@ -35,6 +35,7 @@ class CalorieEntry(BaseModel):
     """
     item: str
     calories: int
+    unit: str  # New field to specify the unit of the food item
 
 class CalorieSummary(BaseModel):
     """
@@ -49,7 +50,7 @@ async def add_calorie_entry(entry: CalorieEntry):
     Adds a new calorie entry to the tracker and updates the total.
     """
     global current_total_calories
-    calorie_entries.append({"item": entry.item, "calories": entry.calories})
+    calorie_entries.append({"item": entry.item, "calories": entry.calories, "unit": entry.unit})
     current_total_calories += entry.calories
     return CalorieSummary(total_calories=current_total_calories)
 
