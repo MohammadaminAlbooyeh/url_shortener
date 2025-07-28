@@ -1,79 +1,150 @@
-# main.py for FastAPI Backend
-from fastapi import FastAPI, HTTPException
+# backend/main.py
+from fastapi import FastAPI, HTTPException, Depends, status
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Optional
+import datetime
+import sqlite3
+import pandas as pd # For CSV export
 
-app = FastAPI(
-    title="Calorie Tracker API",
-    description="A simple API to track daily calorie intake."
-)
+app = FastAPI()
 
-# In-memory storage for calorie entries.
-# In a real application, this would be replaced with a database (e.g., PostgreSQL, MongoDB).
-calorie_entries: List[Dict[str, int]] = []
-# We'll keep a simple running total for the "day" as per the request,
-# without complex date handling for simplicity.
-# For a real app, you'd associate entries with specific dates and users.
-current_total_calories: int = 0
+# --- Database Setup using sqlite3 ---
+DATABASE_FILE = "calorie_tracker_sqlite3.db"
 
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.row_factory = sqlite3.Row # This allows accessing columns by name
+    return conn
 
-# New: Endpoint to get all entries
-class CalorieEntryOut(BaseModel):
+def create_table_if_not_exists():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS calorie_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item TEXT NOT NULL,
+            calories INTEGER NOT NULL,
+            unit TEXT NOT NULL,
+            entry_date TEXT NOT NULL -- Storing date as TEXT in YYYY-MM-DD format
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Ensure table is created when the app starts
+create_table_if_not_exists()
+
+# Pydantic models
+class CalorieEntryBase(BaseModel):
     item: str
     calories: int
+    unit: str
 
-@app.get("/get_entries/", response_model=List[CalorieEntryOut])
-async def get_entries():
-    """
-    Returns all calorie entries for the current day.
-    """
-    return calorie_entries
+class CalorieEntryCreate(CalorieEntryBase):
+    pass
 
-class CalorieEntry(BaseModel):
-    """
-    Pydantic model for a single calorie entry.
-    """
-    item: str
-    calories: int
-    unit: str  # New field to specify the unit of the food item
+class CalorieEntryResponse(CalorieEntryBase):
+    id: int
+    date: datetime.date # Still expose as date object in API response
 
-class CalorieSummary(BaseModel):
-    """
-    Pydantic model for the total calorie summary.
-    """
-    total_calories: int
-    max_daily_calories: int = 2000
+class MaxDailyCalories(BaseModel):
+    max_daily_calories: int = 2000 # Default max daily calories
 
-@app.post("/add_calorie_entry/", response_model=CalorieSummary)
-async def add_calorie_entry(entry: CalorieEntry):
-    """
-    Adds a new calorie entry to the tracker and updates the total.
-    """
-    global current_total_calories
-    calorie_entries.append({"item": entry.item, "calories": entry.calories, "unit": entry.unit})
-    current_total_calories += entry.calories
-    return CalorieSummary(total_calories=current_total_calories)
+# Global variable for max daily calories
+MAX_DAILY_CALORIES = 2000
 
-@app.get("/get_total_calories/", response_model=CalorieSummary)
-async def get_total_calories():
-    """
-    Retrieves the current total calorie intake.
-    """
-    return CalorieSummary(total_calories=current_total_calories)
+# Helper function to convert sqlite3.Row to CalorieEntryResponse
+def row_to_calorie_entry(row):
+    return CalorieEntryResponse(
+        id=row['id'],
+        item=row['item'],
+        calories=row['calories'],
+        unit=row['unit'],
+        date=datetime.date.fromisoformat(row['entry_date'])
+    )
 
-@app.post("/reset_calories/", response_model=CalorieSummary)
-async def reset_calories():
-    """
-    Resets the calorie tracker for a new day.
-    """
-    global calorie_entries
-    global current_total_calories
-    calorie_entries = []
-    current_total_calories = 0
-    return CalorieSummary(total_calories=current_total_calories)
+# --- API Endpoints ---
 
-# To run this FastAPI application:
-# 1. Save the code above as `main.py`.
-# 2. Install FastAPI and Uvicorn: `pip install fastapi uvicorn`
-# 3. Run the server: `uvicorn main:app --reload`
-# The API will be available at http://127.0.0.1:8000
+@app.post("/add_calorie_entry/", response_model=CalorieEntryResponse)
+def add_calorie_entry(entry: CalorieEntryCreate):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    current_date_str = datetime.date.today().isoformat() # YYYY-MM-DD
+    try:
+        cursor.execute(
+            "INSERT INTO calorie_entries (item, calories, unit, entry_date) VALUES (?, ?, ?, ?)",
+            (entry.item, entry.calories, entry.unit, current_date_str)
+        )
+        conn.commit()
+        # Get the last inserted row to return it
+        cursor.execute("SELECT * FROM calorie_entries WHERE id = last_insert_rowid()")
+        new_entry = cursor.fetchone()
+        return row_to_calorie_entry(new_entry)
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
+    finally:
+        conn.close()
+
+@app.get("/get_entries/", response_model=List[CalorieEntryResponse])
+def get_entries(date: Optional[datetime.date] = None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query_date_str = date.isoformat() if date else datetime.date.today().isoformat()
+
+    try:
+        cursor.execute(
+            "SELECT * FROM calorie_entries WHERE entry_date = ?",
+            (query_date_str,)
+        )
+        rows = cursor.fetchall()
+        return [row_to_calorie_entry(row) for row in rows]
+    finally:
+        conn.close()
+
+@app.get("/get_total_calories/")
+def get_total_calories(date: Optional[datetime.date] = None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query_date_str = date.isoformat() if date else datetime.date.today().isoformat()
+
+    try:
+        cursor.execute(
+            "SELECT SUM(calories) FROM calorie_entries WHERE entry_date = ?",
+            (query_date_str,)
+        )
+        total_calories = cursor.fetchone()[0] or 0 # .fetchone() returns a tuple, get first element
+        return {"total_calories": total_calories, "max_daily_calories": MAX_DAILY_CALORIES}
+    finally:
+        conn.close()
+
+@app.post("/reset_calories/")
+def reset_calories(date: Optional[datetime.date] = None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query_date_str = date.isoformat() if date else datetime.date.today().isoformat()
+
+    try:
+        cursor.execute(
+            "DELETE FROM calorie_entries WHERE entry_date = ?",
+            (query_date_str,)
+        )
+        conn.commit()
+        return {"message": f"Calories for {query_date_str} reset successfully!"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
+    finally:
+        conn.close()
+
+@app.get("/get_all_entries/", response_model=List[CalorieEntryResponse])
+def get_all_entries():
+    """Fetches all historical calorie entries."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM calorie_entries ORDER BY entry_date ASC, id ASC")
+        rows = cursor.fetchall()
+        return [row_to_calorie_entry(row) for row in rows]
+    finally:
+        conn.close()
