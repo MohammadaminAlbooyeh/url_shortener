@@ -5,11 +5,13 @@ generated with **base62 encoding of an auto-increment primary key** (`id -> base
 
 ## Features
 
-- `POST /shorten` — create a short link from a long URL
+- `POST /shorten` — create a short link from a long URL; returns the full `short_url`
+  (`BASE_URL` + `/` + `short_code`). Re-submitting the same long URL returns the
+  existing short link (idempotent).
 - `GET /{short_code}` — redirect to the original URL (307) and count a click
 - `GET /shorten/{short_code}` — fetch info about a short link (click count, etc.)
 - Base62 short codes derived from an auto-incrementing integer `id`
-- Alembic migrations, Pydantic settings from env, SQLite by default
+- Alembic migrations, Pydantic settings from env, PostgreSQL
 
 ## Project layout
 
@@ -36,6 +38,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# create the PostgreSQL database (adjust user/host as needed)
+createdb url_shortener
+createdb url_shortener_test   # used by the test suite
 ```
 
 ## Run
@@ -56,8 +61,8 @@ curl -X POST http://localhost:8000/shorten \
 
 ## Database / migrations
 
-Tables are auto-created on startup via `Base.metadata.create_all`. For managed
-migrations use Alembic:
+Schema is managed by Alembic. On startup `Base.metadata.create_all` also runs as a
+safety net, but the migrations are the source of truth:
 
 ```bash
 alembic revision --autogenerate -m "create urls table"
@@ -65,6 +70,9 @@ alembic upgrade head
 ```
 
 ## Tests
+
+Tests run against a dedicated `url_shortener_test` PostgreSQL database (configured in
+`conftest.py`), so they never touch the development database.
 
 ```bash
 pytest

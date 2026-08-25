@@ -14,6 +14,7 @@ class URLCreate(URLBase):
 class URLInfo(URLBase):
     id: int
     short_code: str
+    short_url: str
     created_at: datetime
     clicks: int
 
