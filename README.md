@@ -1,5 +1,7 @@
 # URL Shortener
 
+[![Tests](https://github.com/MohammadaminAlbooyeh/url_shortener/actions/workflows/tests.yml/badge.svg)](https://github.com/MohammadaminAlbooyeh/url_shortener/actions/workflows/tests.yml)
+
 A small URL shortener built with FastAPI, SQLAlchemy and Alembic. Short codes are
 generated with **base62 encoding of an auto-increment primary key** (`id -> base62`).
 
@@ -117,6 +119,19 @@ Create a short link:
 curl -X POST http://localhost:8000/shorten \
   -H "Content-Type: application/json" \
   -d '{"long_url": "https://example.com/some/long/path"}'
+```
+
+Example response:
+
+```json
+{
+  "long_url": "https://example.com/some/long/path",
+  "id": 1,
+  "short_code": "1",
+  "created_at": "2026-08-30T15:36:46.593690+02:00",
+  "clicks": 0,
+  "short_url": "http://localhost:8000/1"
+}
 ```
 
 ## Database / migrations
