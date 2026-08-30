@@ -35,6 +35,29 @@ url_shortener/
 ## Architecture
 
 ```mermaid
+flowchart TD
+    Client["Client\n(browser / curl / API consumer)"]
+
+    subgraph App["FastAPI app (app/main.py)"]
+        direction TB
+        Middleware["Rate limiter (slowapi)\n+ API key check (auth.py)"]
+        Routers["Routers\nshorten.py · redirect.py"]
+        Shortener["shortener.py\nbase62 encode/decode"]
+        Middleware --> Routers --> Shortener
+    end
+
+    DB[("PostgreSQL\n(urls table, via SQLAlchemy + Alembic)")]
+
+    Client --> Middleware
+    Shortener --> DB
+    DB --> Client
+```
+
+At a high level: every request goes through rate limiting/auth, then a router, which
+uses `shortener.py` to turn the row's auto-increment `id` into a `short_code` and
+SQLAlchemy to read/write PostgreSQL. The detailed per-endpoint flow is below.
+
+```mermaid
 flowchart LR
     Client(["Client"])
 
