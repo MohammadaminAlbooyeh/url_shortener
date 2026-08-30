@@ -115,10 +115,19 @@ Tests run against a dedicated `url_shortener_test` PostgreSQL database (configur
 pytest
 ```
 
+## Rate limiting & auth
+
+- `POST /shorten` is rate-limited (default `10/minute` per client IP, configurable via
+  `RATE_LIMIT`) and rejects `long_url` values longer than `MAX_LONG_URL_LENGTH`
+  (default 2048 characters).
+- Set `API_KEY` in `.env` to require an `X-API-Key` header on `POST /shorten`. Left
+  unset (the default), the endpoint is open — fine for local development, not for a
+  public deployment.
+
 ## Known limitations / future work
 
-- No rate limiting or request-size/length limits on `POST /shorten` yet. Add these
-  before exposing the service publicly.
 - `long_url` is validated by Pydantic's `HttpUrl`, so only absolute URLs with a
   scheme (e.g. `https://example.com`) are accepted; bare hosts like `example.com`
   are rejected with `422`.
+- `GET /{short_code}` and `GET /shorten/{short_code}` are not rate-limited or
+  authenticated — only creation is currently protected.

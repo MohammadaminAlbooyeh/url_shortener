@@ -1,14 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from .. import crud, schemas
+from ..auth import require_api_key
+from ..config import settings
 from ..database import get_db
+from ..limiter import limiter
 
 router = APIRouter()
 
 
-@router.post("/shorten", response_model=schemas.URLInfo, status_code=status.HTTP_201_CREATED)
-def shorten_url(payload: schemas.URLCreate, db: Session = Depends(get_db)):
+@router.post(
+    "/shorten",
+    response_model=schemas.URLInfo,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
+)
+@limiter.limit(settings.rate_limit)
+def shorten_url(request: Request, payload: schemas.URLCreate, db: Session = Depends(get_db)):
     return crud.create_url(db, str(payload.long_url))
 
 
