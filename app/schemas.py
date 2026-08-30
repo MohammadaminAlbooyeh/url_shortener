@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, computed_field
+
+from .config import settings
 
 
 class URLBase(BaseModel):
@@ -14,8 +16,12 @@ class URLCreate(URLBase):
 class URLInfo(URLBase):
     id: int
     short_code: str
-    short_url: str
     created_at: datetime
     clicks: int
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def short_url(self) -> str:
+        return f"{settings.base_url.rstrip('/')}/{self.short_code}"

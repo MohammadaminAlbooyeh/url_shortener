@@ -57,3 +57,8 @@ def test_shorten_info_includes_short_url(client):
 def test_unknown_code_404(client):
     resp = client.get("/nonexistent")
     assert resp.status_code == 404
+
+
+def test_shorten_rejects_scheme_less_url(client):
+    resp = client.post("/shorten", json={"long_url": "example.com"})
+    assert resp.status_code == 422

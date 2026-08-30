@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import models, shortener
@@ -18,11 +19,18 @@ def create_url(db: Session, long_url: str) -> models.URL:
 
     db_url = models.URL(long_url=long_url)
     db.add(db_url)
-    db.flush()
-    db_url.short_code = shortener.encode_base62(db_url.id)
-    db.commit()
-    db.refresh(db_url)
-    return db_url
+    try:
+        db.flush()
+        db_url.short_code = shortener.encode_base62(db_url.id)
+        db.commit()
+        db.refresh(db_url)
+        return db_url
+    except IntegrityError:
+        db.rollback()
+        existing = get_by_long_url(db, long_url)
+        if existing is not None:
+            return existing
+        raise
 
 
 def increment_clicks(db: Session, db_url: models.URL) -> models.URL:

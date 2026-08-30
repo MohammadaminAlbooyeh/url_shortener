@@ -7,7 +7,8 @@ generated with **base62 encoding of an auto-increment primary key** (`id -> base
 
 - `POST /shorten` — create a short link from a long URL; returns the full `short_url`
   (`BASE_URL` + `/` + `short_code`). Re-submitting the same long URL returns the
-  existing short link (idempotent).
+  existing short link (idempotent under normal load; `long_url` has no DB-level unique
+  constraint yet, so two concurrent requests for a brand-new URL can still race).
 - `GET /{short_code}` — redirect to the original URL (307) and count a click
 - `GET /shorten/{short_code}` — fetch info about a short link (click count, etc.)
 - Base62 short codes derived from an auto-incrementing integer `id`
@@ -30,6 +31,42 @@ url_shortener/
 ├── tests/               # pytest tests
 └── .env.example
 ```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client(["Client"])
+
+    subgraph API["FastAPI app"]
+        Shorten["POST /shorten"]
+        Info["GET /shorten/{short_code}"]
+        Redirect["GET /{short_code}"]
+        Shortener["shortener.py\nbase62 encode/decode"]
+    end
+
+    DB[("PostgreSQL\nurls table")]
+
+    Client -->|"long_url"| Shorten
+    Shorten -->|"1. insert row (flush) -> id"| DB
+    Shorten -->|"2. encode(id) -> short_code"| Shortener
+    Shorten -->|"3. save short_code"| DB
+    Shorten -->|"short_url + short_code"| Client
+
+    Client -->|"GET /{short_code}"| Redirect
+    Redirect -->|"lookup by short_code"| DB
+    Redirect -->|"increment clicks"| DB
+    Redirect -->|"307 redirect to long_url"| Client
+
+    Client -->|"GET /shorten/{short_code}"| Info
+    Info -->|"lookup by short_code"| DB
+    Info -->|"click count, etc."| Client
+```
+
+Short codes are never generated in isolation: the flow always goes
+**auto-increment `id` (from PostgreSQL) → `base62 encode` → `short_code`**, which is why
+`shortener.py` has no database dependency of its own — it's a pure int-to-string codec
+that `crud.create_url` calls once the row's `id` is known.
 
 ## Setup
 
@@ -77,3 +114,11 @@ Tests run against a dedicated `url_shortener_test` PostgreSQL database (configur
 ```bash
 pytest
 ```
+
+## Known limitations / future work
+
+- No rate limiting or request-size/length limits on `POST /shorten` yet. Add these
+  before exposing the service publicly.
+- `long_url` is validated by Pydantic's `HttpUrl`, so only absolute URLs with a
+  scheme (e.g. `https://example.com`) are accepted; bare hosts like `example.com`
+  are rejected with `422`.
